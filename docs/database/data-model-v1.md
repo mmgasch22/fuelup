@@ -38,15 +38,13 @@ Extiende `auth.users` (Supabase Auth). Relación 1:1 mediante `id` compartido.
 
 | name | text | |
 
-| age | int | |
+| birth\_date | date | La edad se deriva de aquí, no se almacena como número fijo |
 
 | sex | text | |
 
 | height\_cm | float | Unidad fija: centímetros |
 
 | activity\_level | text | |
-
-| workouts\_per\_week | int | |
 
 | goal | text | perder grasa / mantener / ganar masa |
 
