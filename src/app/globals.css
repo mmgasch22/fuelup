@@ -1,26 +1,70 @@
 @import "tailwindcss";
 
+/*
+ * Tokens de marca — Clarity (paleta no definitiva, sujeta a revisión).
+ * Cambiar la identidad visual más adelante es editar estos valores;
+ * ningún componente debería tener un color en hexadecimal suelto.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f8f7;
+  --foreground: #14201f;
+  --surface: #ffffff;
+  --border: #e4e7e5;
+  --text-dim: #5b6866;
+
+  --primary: #0e7c86;
+  --primary-hover: #0b636b;
+  --secondary: #3f4b5b;
+  --accent: #e2985a;
+
+  --protein: #c6455b;
+  --carbs: #d4af2e;
+  --fat: #7b6ca6;
+
+  --radius-button: 8px;
+  --radius-card: 12px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text-dim: var(--text-dim);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+
+  --color-protein: var(--protein);
+  --color-carbs: var(--carbs);
+  --color-fat: var(--fat);
+
+  --radius-button: var(--radius-button);
+  --radius-card: var(--radius-card);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
+/*
+ * Modo oscuro: estructura preparada, sin paleta propia diseñada todavía
+ * (decisión explícita para Clarity — ver docs/design). Este es un
+ * fallback funcional, no la versión final.
+ */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #14201f;
+    --foreground: #f7f8f7;
+    --surface: #1b2725;
+    --border: #2c3735;
+    --text-dim: #9aa6a3;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
