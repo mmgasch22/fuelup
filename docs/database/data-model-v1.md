@@ -12,7 +12,7 @@ Aceptado (Sprint 0)
 
 
 
-FuelUp V1 gestiona 7 entidades de dominio, todas relacionadas con el usuario
+FuelUp V1 gestiona 8 entidades de dominio, todas relacionadas con el usuario
 
 (`profiles`) mediante `user\_id`. `profiles` extiende `auth.users` de Supabase
 
@@ -50,7 +50,7 @@ Extiende `auth.users` (Supabase Auth). Relación 1:1 mediante `id` compartido.
 
 | daily\_steps\_goal | int | Objetivo diario de pasos |
 
-| daily\_water\_goal\_ml | int | Objetivo diario de agua, en mililitros |
+| daily\_water\_goal\_ml | int | Sin usar desde Sprint 4 — el objetivo de agua se eliminó del producto (columna se deja tal cual, sin migración) |
 
 
 
@@ -120,6 +120,30 @@ Caché local de alimentos consultados desde OpenFoodFacts.
 
 
 
+\### meal\_slots
+
+Estructura HABITUAL de comidas de un usuario (Sprint 4). No depende de la
+fecha — es "qué comidas existen" (Desayuno, "Post-entreno"...), no "qué se
+comió tal día". Se crea automáticamente al completar el onboarding
+(Desayuno/Comida/Snack/Cena) y el usuario la edita libremente desde el
+dashboard (crear, renombrar, reordenar, eliminar).
+
+
+
+| Campo | Tipo | Notas |
+
+|---|---|---|
+
+| id | uuid (PK) | |
+
+| user\_id | uuid (FK → profiles.id) | |
+
+| name | text | Libre, definido por el usuario |
+
+| sort\_order | int | Orden de aparición en el dashboard |
+
+
+
 \### food\_logs
 
 Registro de comidas del usuario.
@@ -136,11 +160,11 @@ Registro de comidas del usuario.
 
 | food\_id | uuid (FK → foods.id) | |
 
-| meal\_type | text (check constraint) | breakfast / lunch / dinner / snack |
+| meal\_slot\_id | uuid (FK → meal\_slots.id, nullable) | `ON DELETE SET NULL` — si se borra la comida, el registro queda "sin comida asignada" pero nunca se pierde |
 
 | grams | float | |
 
-| date | date | |
+| date | date | Fecha concreta del registro — `meal\_slots` no la conoce, solo `food\_logs` |
 
 
 
@@ -266,11 +290,29 @@ Constraint: `UNIQUE(user\_id, date)`
 
 
 
-\- \*\*`food\_logs` como tabla única con `meal\_type`\*\*, en vez de una tabla por
+\- \*\*`food\_logs` como tabla única con `meal\_slot\_id`\*\*, en vez de una tabla por
 
-&#x20; tipo de comida: evita duplicar estructura 4 veces y simplifica las
+&#x20; tipo de comida: evita duplicar estructura y simplifica las consultas que
 
-&#x20; consultas que agregan el día completo (ej. el dashboard).
+&#x20; agregan el día completo (ej. el dashboard). Sustituye al enum fijo
+
+&#x20; `meal\_type` de Sprint 0–4 (eliminado en la migración `0003\_meal\_slots.sql`).
+
+
+
+\- \*\*`meal\_slots` separado de `food\_logs`, en vez de repetir la comida por
+
+&#x20; día\*\*: la estructura habitual de comidas (A) y los registros de un día
+
+&#x20; concreto (B) son cosas distintas. (A) no depende de la fecha y vive para
+
+&#x20; siempre por usuario; (B) ya tenía `date` desde Sprint 0. Esto evita crear
+
+&#x20; una fila de "Desayuno" nueva cada día, y de paso deja lista la navegación
+
+&#x20; entre días (futura): ver un día distinto es la misma consulta de
+
+&#x20; `food\_logs` cambiando `date`, sin tocar `meal\_slots` en absoluto.
 
 
 

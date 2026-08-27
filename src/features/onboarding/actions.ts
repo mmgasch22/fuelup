@@ -10,6 +10,11 @@ import type { ActivityLevel, Goal, Sex } from "@/lib/nutrition/types";
 
 export type OnboardingActionState = { error: string } | undefined;
 
+// Comidas habituales con las que arranca todo usuario nuevo — el usuario
+// las puede renombrar, reordenar o borrar libremente desde el dashboard en
+// cuanto quiera; esto solo evita que el primer día vea un dashboard vacío.
+const DEFAULT_MEAL_SLOTS = ["Desayuno", "Comida", "Snack", "Cena"];
+
 export async function completeOnboarding(
   _prevState: OnboardingActionState,
   formData: FormData,
@@ -31,7 +36,6 @@ export async function completeOnboarding(
   const activityLevel = formData.get("activity_level") as ActivityLevel;
   const goal = formData.get("goal") as Goal;
   const dailyStepsGoal = Number(formData.get("daily_steps_goal"));
-  const dailyWaterGoalMl = Number(formData.get("daily_water_goal_ml"));
   const weightKg = Number(formData.get("weight_kg"));
 
   const { error: profileError } = await supabase.from("profiles").upsert({
@@ -43,7 +47,6 @@ export async function completeOnboarding(
     activity_level: activityLevel,
     goal,
     daily_steps_goal: dailyStepsGoal,
-    daily_water_goal_ml: dailyWaterGoalMl,
   });
 
   if (profileError) {
@@ -91,6 +94,29 @@ export async function completeOnboarding(
 
   if (targetError) {
     return { error: targetError.message };
+  }
+
+  // Idempotente a propósito: si el formulario se reenvía tras un fallo a
+  // mitad de camino, no se deben duplicar las comidas por defecto (a
+  // diferencia de weight_logs, un duplicado aquí sí sería visible y molesto).
+  const { data: existingMealSlots } = await supabase
+    .from("meal_slots")
+    .select("id")
+    .eq("user_id", user.id)
+    .limit(1);
+
+  if (!existingMealSlots || existingMealSlots.length === 0) {
+    const { error: mealSlotsError } = await supabase.from("meal_slots").insert(
+      DEFAULT_MEAL_SLOTS.map((name, index) => ({
+        user_id: user.id,
+        name,
+        sort_order: index,
+      })),
+    );
+
+    if (mealSlotsError) {
+      return { error: mealSlotsError.message };
+    }
   }
 
   redirect("/dashboard");
