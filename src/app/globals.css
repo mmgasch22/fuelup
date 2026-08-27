@@ -6,6 +6,14 @@
  * ningún componente debería tener un color en hexadecimal suelto.
  */
 :root {
+  /* Fuerza los controles nativos (select, checkbox, scrollbar...) a
+   * pintarse en claro. Sin esto, en un navegador con preferencia oscura el
+   * <select> hereda texto claro (vía el reset de Tailwind) mientras su
+   * desplegable nativo abierto se pinta con fondo blanco por defecto —
+   * texto claro sobre fondo blanco, ilegible hasta que el SO resalta la
+   * opción en foco. Se revisará cuando Clarity tenga paleta oscura propia. */
+  color-scheme: light;
+
   --background: #f7f8f7;
   --foreground: #14201f;
   --surface: #ffffff;
