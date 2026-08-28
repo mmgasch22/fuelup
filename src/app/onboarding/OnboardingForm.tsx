@@ -60,7 +60,7 @@ export default function OnboardingForm() {
           id="weight_kg"
           name="weight_kg"
           type="number"
-          step="0.1"
+          step="0.01"
           min="1"
           required
           className="rounded border px-3 py-2"

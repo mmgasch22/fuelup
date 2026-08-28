@@ -22,7 +22,13 @@ function scaledMacro(value100g: number | null, factor: number): string {
   return value100g === null ? "— sin dato" : `${Math.round(value100g * factor)} g`;
 }
 
-export default function FoodSearchForm({ mealSlotId }: { mealSlotId: string }) {
+export default function FoodSearchForm({
+  mealSlotId,
+  date,
+}: {
+  mealSlotId: string;
+  date: string;
+}) {
   const [state, action, pending] = useActionState(logFood, undefined);
 
   const [tab, setTab] = useState<Tab>("search");
@@ -160,6 +166,7 @@ export default function FoodSearchForm({ mealSlotId }: { mealSlotId: string }) {
 
       <input type="hidden" name="source" value={tab} />
       <input type="hidden" name="meal_slot_id" value={mealSlotId} />
+      <input type="hidden" name="date" value={date} />
 
       {tab === "search" && !selected && (
         <div className="flex flex-col gap-2">

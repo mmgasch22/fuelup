@@ -29,6 +29,7 @@ export interface MealSlotWithLogs {
 interface MealSlotsSectionProps {
   mealSlots: MealSlotWithLogs[];
   unassignedLogs: FoodLogRow[];
+  date: string;
 }
 
 const inputClass =
@@ -43,6 +44,7 @@ const UNASSIGNED = "unassigned";
 export default function MealSlotsSection({
   mealSlots,
   unassignedLogs,
+  date,
 }: MealSlotsSectionProps) {
   const [items, setItems] = useState(mealSlots);
   // Detecta "llegaron datos nuevos del servidor" comparando la referencia
@@ -291,6 +293,7 @@ export default function MealSlotsSection({
                 <FoodLogItem
                   key={log.id}
                   log={log}
+                  date={date}
                   isDragging={activeDragFoodId === log.id}
                   onDragStart={(e) => handleFoodPointerDown(e, log.id, slot.id)}
                   onDragMove={handleFoodPointerMove}
@@ -301,7 +304,7 @@ export default function MealSlotsSection({
           )}
 
           <Link
-            href={`/food/new?meal=${slot.id}`}
+            href={`/food/new?meal=${slot.id}&date=${date}`}
             className="mt-2 inline-block text-xs font-semibold text-primary"
           >
             + Añadir alimento
@@ -319,6 +322,7 @@ export default function MealSlotsSection({
               <FoodLogItem
                 key={log.id}
                 log={log}
+                date={date}
                 isDragging={activeDragFoodId === log.id}
                 onDragStart={(e) => handleFoodPointerDown(e, log.id, UNASSIGNED)}
                 onDragMove={handleFoodPointerMove}
@@ -351,6 +355,7 @@ export default function MealSlotsSection({
 
 interface FoodLogItemProps {
   log: FoodLogRow;
+  date: string;
   isDragging?: boolean;
   onDragStart?: (e: PointerEvent<HTMLSpanElement>) => void;
   onDragMove?: (e: PointerEvent<HTMLSpanElement>) => void;
@@ -359,6 +364,7 @@ interface FoodLogItemProps {
 
 function FoodLogItem({
   log,
+  date,
   isDragging,
   onDragStart,
   onDragMove,
@@ -391,16 +397,25 @@ function FoodLogItem({
           {Math.round((log.foods.kcal_100g * log.grams) / 100)} kcal
         </p>
       </div>
-      <UpdateGramsForm id={log.id} grams={log.grams} />
-      <DeleteLogForm id={log.id} />
+      <UpdateGramsForm id={log.id} grams={log.grams} date={date} />
+      <DeleteLogForm id={log.id} date={date} />
     </li>
   );
 }
 
-function UpdateGramsForm({ id, grams }: { id: string; grams: number }) {
+function UpdateGramsForm({
+  id,
+  grams,
+  date,
+}: {
+  id: string;
+  grams: number;
+  date: string;
+}) {
   return (
     <form action={updateFoodLogGrams} className="flex items-center gap-1">
       <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="date" value={date} />
       <input
         type="number"
         name="grams"
@@ -417,10 +432,11 @@ function UpdateGramsForm({ id, grams }: { id: string; grams: number }) {
   );
 }
 
-function DeleteLogForm({ id }: { id: string }) {
+function DeleteLogForm({ id, date }: { id: string; date: string }) {
   return (
     <form action={deleteFoodLog}>
       <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="date" value={date} />
       <button type="submit" className="text-xs font-semibold text-text-dim">
         Borrar
       </button>

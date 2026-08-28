@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { resolveRequestedDate } from "@/lib/date/dates";
 
 export type FoodActionState = { error: string } | undefined;
 
@@ -133,21 +134,25 @@ export async function logFood(
     foodId = food.id;
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Nunca se confía en la fecha del formulario tal cual: resolveRequestedDate
+  // cae a hoy si falta, tiene formato inválido, o es una fecha futura.
+  const date = resolveRequestedDate(formData.get("date") as string | null);
 
   const { error: logError } = await supabase.from("food_logs").insert({
     user_id: user.id,
     food_id: foodId,
     meal_slot_id: mealSlotId,
     grams,
-    date: today,
+    date,
   });
 
   if (logError) {
     return { error: logError.message };
   }
 
-  redirect("/dashboard");
+  // Vuelve al día que se estaba viendo, no siempre a "hoy" — si no, editar
+  // un día pasado te devolvería a hoy y perderías dónde estabas.
+  redirect(`/dashboard?date=${date}`);
 }
 
 // Sin useActionState (a diferencia de logFood): es un ajuste rápido inline
@@ -167,12 +172,13 @@ export async function updateFoodLogGrams(formData: FormData) {
 
   const id = formData.get("id") as string;
   const grams = parseNumber(formData.get("grams"));
+  const date = resolveRequestedDate(formData.get("date") as string | null);
 
   if (id && grams && grams > 0) {
     await supabase.from("food_logs").update({ grams }).eq("id", id);
   }
 
-  redirect("/dashboard");
+  redirect(`/dashboard?date=${date}`);
 }
 
 export async function deleteFoodLog(formData: FormData) {
@@ -187,11 +193,13 @@ export async function deleteFoodLog(formData: FormData) {
   }
 
   const id = formData.get("id") as string;
+  const date = resolveRequestedDate(formData.get("date") as string | null);
+
   if (id) {
     await supabase.from("food_logs").delete().eq("id", id);
   }
 
-  redirect("/dashboard");
+  redirect(`/dashboard?date=${date}`);
 }
 
 // Se llama directamente desde el arrastre en MealSlotsSection (no desde un

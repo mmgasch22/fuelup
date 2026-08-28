@@ -1,12 +1,17 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/features/auth/actions";
+import { logWeight } from "@/features/weight/actions";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { StatTile } from "@/components/ui/StatTile";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { WeightChart } from "@/components/ui/WeightChart";
 import { macroColors } from "@/components/ui/tokens";
 import { calculateDailyTotals } from "@/lib/food/dailyTotals";
+import { buildWeightChartData } from "@/lib/weight/chartPoints";
+import { addDays, resolveRequestedDate, todayIso } from "@/lib/date/dates";
 import MealSlotsSection, {
   type FoodLogRow,
   type MealSlotWithLogs,
@@ -27,7 +32,13 @@ interface FoodLogQueryRow {
   };
 }
 
-export default async function DashboardPage() {
+const WEIGHT_CHART_DAYS = 30;
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -47,48 +58,70 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const todayLabel = new Date().toLocaleDateString("es-ES", {
+  const today = todayIso();
+  // Nunca se confía en la fecha de la URL tal cual: resolveRequestedDate
+  // cae a hoy si falta, tiene formato inválido, o pide un día futuro (no
+  // hay navegación a futuro en V1).
+  const { date: requestedDate } = await searchParams;
+  const date = resolveRequestedDate(requestedDate);
+  const isToday = date === today;
+  const dateLabel = new Date(`${date}T00:00:00`).toLocaleDateString("es-ES", {
     weekday: "long",
     day: "numeric",
     month: "long",
   });
 
-  const [{ data: latestTarget }, { data: latestWeight }, { data: mealSlots }, { data: todayLogsRaw }] =
-    await Promise.all([
-      supabase
-        .from("calorie_targets")
-        .select("kcal_target, protein_g, carbs_g, fat_g, effective_date")
-        .eq("user_id", user.id)
-        .order("effective_date", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("weight_logs")
-        .select("weight_kg, date")
-        .eq("user_id", user.id)
-        .order("date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("meal_slots")
-        .select("id, name")
-        .eq("user_id", user.id)
-        .order("sort_order", { ascending: true }),
-      supabase
-        .from("food_logs")
-        .select(
-          "id, grams, meal_slot_id, foods(name, kcal_100g, protein_100g, carbs_100g, fat_100g)",
-        )
-        .eq("user_id", user.id)
-        .eq("date", today),
-    ]);
+  const [
+    { data: latestTarget },
+    { data: weightOnDate },
+    { data: mealSlots },
+    { data: dayLogsRaw },
+    { data: weightHistoryRaw },
+  ] = await Promise.all([
+    supabase
+      .from("calorie_targets")
+      .select("kcal_target, protein_g, carbs_g, fat_g, effective_date")
+      .eq("user_id", user.id)
+      .lte("effective_date", date)
+      .order("effective_date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("weight_logs")
+      .select("weight_kg, date")
+      .eq("user_id", user.id)
+      .lte("date", date)
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("meal_slots")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("food_logs")
+      .select(
+        "id, grams, meal_slot_id, foods(name, kcal_100g, protein_100g, carbs_100g, fat_100g)",
+      )
+      .eq("user_id", user.id)
+      .eq("date", date),
+    // La gráfica es independiente del día que se está viendo — siempre
+    // son los últimos 30 días contados desde hoy, no desde `date`.
+    supabase
+      .from("weight_logs")
+      .select("weight_kg, date, created_at")
+      .eq("user_id", user.id)
+      .gte("date", addDays(today, -(WEIGHT_CHART_DAYS - 1)))
+      .order("date", { ascending: true })
+      .order("created_at", { ascending: true }),
+  ]);
 
-  const todayLogs = (todayLogsRaw ?? []) as unknown as FoodLogQueryRow[];
+  const dayLogs = (dayLogsRaw ?? []) as unknown as FoodLogQueryRow[];
 
   const totals = calculateDailyTotals(
-    todayLogs.map((log) => ({ grams: log.grams, food: log.foods })),
+    dayLogs.map((log) => ({ grams: log.grams, food: log.foods })),
   );
 
   const incompleteMacroNames = [
@@ -100,14 +133,24 @@ export default async function DashboardPage() {
   const mealSlotsWithLogs: MealSlotWithLogs[] = (mealSlots ?? []).map((slot) => ({
     id: slot.id,
     name: slot.name,
-    logs: todayLogs
+    logs: dayLogs
       .filter((log) => log.meal_slot_id === slot.id)
       .map((log) => ({ id: log.id, grams: log.grams, foods: log.foods })),
   }));
 
-  const unassignedLogs: FoodLogRow[] = todayLogs
+  const unassignedLogs: FoodLogRow[] = dayLogs
     .filter((log) => log.meal_slot_id === null)
     .map((log) => ({ id: log.id, grams: log.grams, foods: log.foods }));
+
+  const weightChartData = buildWeightChartData(
+    (weightHistoryRaw ?? []).map((w) => ({ date: w.date, weightKg: w.weight_kg })),
+  );
+
+  // Solo precarga el campo si el peso mostrado es literalmente el de este
+  // día (no uno heredado de una fecha anterior) — si no, el formulario
+  // debe verse como "registrar", no como "editar" un valor de otro día.
+  const weightForSelectedDate =
+    weightOnDate?.date === date ? weightOnDate.weight_kg : undefined;
 
   return (
     <main className="min-h-screen bg-background px-4 py-6 sm:px-6 sm:py-10">
@@ -118,9 +161,6 @@ export default async function DashboardPage() {
             <h1 className="text-2xl font-semibold text-foreground">
               {profile.name ?? user.email}
             </h1>
-            <span className="mt-1 inline-block text-xs font-medium capitalize text-text-dim">
-              {todayLabel}
-            </span>
           </div>
           <form action={signOut}>
             <Button variant="secondary" className="text-sm">
@@ -129,11 +169,40 @@ export default async function DashboardPage() {
           </form>
         </header>
 
+        <div className="flex items-center justify-between gap-2 rounded-card border border-border bg-surface px-2 py-2">
+          <Link
+            href={`/dashboard?date=${addDays(date, -1)}`}
+            aria-label="Día anterior"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-button text-xl font-semibold text-foreground active:bg-background"
+          >
+            ‹
+          </Link>
+          <p className="flex-1 truncate text-center text-sm font-semibold capitalize text-foreground">
+            {dateLabel}
+          </p>
+          {isToday ? (
+            <span
+              aria-hidden="true"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-button text-xl text-border"
+            >
+              ›
+            </span>
+          ) : (
+            <Link
+              href={`/dashboard?date=${addDays(date, 1)}`}
+              aria-label="Día siguiente"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-button text-xl font-semibold text-foreground active:bg-background"
+            >
+              ›
+            </Link>
+          )}
+        </div>
+
         {latestTarget ? (
           <>
             <Card>
               <p className="text-xs font-medium uppercase tracking-wide text-text-dim">
-                Objetivo calórico de hoy
+                Objetivo calórico
               </p>
               <p
                 className="mt-2 font-mono text-4xl font-semibold tabular-nums"
@@ -151,8 +220,8 @@ export default async function DashboardPage() {
                 />
               </div>
               <p className="mt-2 text-xs text-text-dim">
-                Objetivo desde el{" "}
-                {new Date(latestTarget.effective_date).toLocaleDateString(
+                Objetivo vigente desde el{" "}
+                {new Date(`${latestTarget.effective_date}T00:00:00`).toLocaleDateString(
                   "es-ES",
                 )}
               </p>
@@ -183,7 +252,7 @@ export default async function DashboardPage() {
             </div>
             {incompleteMacroNames.length > 0 && (
               <p className="text-xs text-text-dim">
-                * Macros incompletos hoy: {incompleteMacroNames.join(", ")} — falta
+                * Macros incompletos: {incompleteMacroNames.join(", ")} — falta
                 información nutricional en algún alimento registrado.
               </p>
             )}
@@ -191,7 +260,7 @@ export default async function DashboardPage() {
         ) : (
           <Card>
             <p className="text-sm text-text-dim">
-              Todavía no hay un objetivo calórico calculado.
+              Todavía no había un objetivo calórico calculado en esta fecha.
             </p>
           </Card>
         )}
@@ -199,23 +268,26 @@ export default async function DashboardPage() {
         <MealSlotsSection
           mealSlots={mealSlotsWithLogs}
           unassignedLogs={unassignedLogs}
+          date={date}
         />
 
         <Card>
           <p className="text-xs font-medium uppercase tracking-wide text-text-dim">
-            Peso actual
+            {isToday ? "Peso actual" : "Peso"}
           </p>
-          {latestWeight ? (
+          {weightOnDate ? (
             <>
               <p className="mt-2 font-mono text-3xl font-semibold tabular-nums text-foreground">
-                {latestWeight.weight_kg}
+                {weightOnDate.weight_kg}
                 <span className="ml-1 text-base font-medium opacity-70">
                   kg
                 </span>
               </p>
               <p className="mt-1 text-xs text-text-dim">
                 Registrado el{" "}
-                {new Date(latestWeight.date).toLocaleDateString("es-ES")}
+                {new Date(`${weightOnDate.date}T00:00:00`).toLocaleDateString(
+                  "es-ES",
+                )}
               </p>
             </>
           ) : (
@@ -223,6 +295,38 @@ export default async function DashboardPage() {
               Todavía no hay ningún peso registrado.
             </p>
           )}
+
+          <form action={logWeight} className="mt-3 flex items-center gap-2">
+            <input type="hidden" name="date" value={date} />
+            <input
+              type="number"
+              name="weight_kg"
+              step="0.01"
+              min="0.1"
+              required
+              defaultValue={weightForSelectedDate}
+              placeholder={weightForSelectedDate === undefined ? "Nuevo peso (kg)" : undefined}
+              className="w-full rounded-button border border-border bg-surface px-3 py-2 text-sm text-foreground"
+            />
+            <Button type="submit" variant="secondary" className="shrink-0 text-sm">
+              {weightForSelectedDate === undefined ? "Registrar" : "Actualizar"}
+            </Button>
+          </form>
+
+          <div className="mt-4 border-t border-border pt-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-text-dim">
+              Últimos {WEIGHT_CHART_DAYS} días
+            </p>
+            {weightChartData.points.length === 0 ? (
+              <p className="mt-2 text-xs text-text-dim">
+                Registra tu peso para ver su evolución.
+              </p>
+            ) : (
+              <div className="mt-2">
+                <WeightChart data={weightChartData} />
+              </div>
+            )}
+          </div>
         </Card>
       </div>
     </main>

@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/Card";
+import { resolveRequestedDate, todayIso } from "@/lib/date/dates";
 import FoodSearchForm from "./FoodSearchForm";
 
 export default async function NewFoodPage({
   searchParams,
 }: {
-  searchParams: Promise<{ meal?: string }>;
+  searchParams: Promise<{ meal?: string; date?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -27,7 +28,9 @@ export default async function NewFoodPage({
     redirect("/onboarding");
   }
 
-  const { meal: mealSlotId } = await searchParams;
+  const { meal: mealSlotId, date: requestedDate } = await searchParams;
+  const date = resolveRequestedDate(requestedDate);
+  const isToday = date === todayIso();
 
   if (!mealSlotId) {
     redirect("/dashboard");
@@ -56,9 +59,19 @@ export default async function NewFoodPage({
           <h1 className="text-2xl font-semibold text-foreground">
             {mealSlot.name}
           </h1>
+          {!isToday && (
+            <p className="mt-1 text-xs text-text-dim">
+              {new Date(`${date}T00:00:00`).toLocaleDateString("es-ES", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+              })}{" "}
+              — no es hoy
+            </p>
+          )}
         </div>
         <Card>
-          <FoodSearchForm mealSlotId={mealSlot.id} />
+          <FoodSearchForm mealSlotId={mealSlot.id} date={date} />
         </Card>
       </div>
     </main>
