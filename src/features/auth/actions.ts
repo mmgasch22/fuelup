@@ -57,3 +57,28 @@ export async function signOut() {
   await supabase.auth.signOut();
   redirect("/login");
 }
+
+// Mismo mecanismo que la confirmación de email (signUp): Supabase envía un
+// enlace con el token en el fragmento de la URL, que /reset-password
+// procesa en el cliente (detectSessionInUrl) para abrir una sesión de
+// recuperación temporal. No revela si el email existe o no en el sistema
+// — eso lo decide Supabase, no esta función.
+export async function requestPasswordReset(
+  _prevState: AuthActionState,
+  formData: FormData,
+): Promise<AuthActionState> {
+  const email = formData.get("email") as string;
+
+  const origin = (await headers()).get("origin");
+  const supabase = await createClient();
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${origin}/reset-password`,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  redirect("/login?reset=sent");
+}

@@ -5,7 +5,7 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { registered, error } = await searchParams;
+  const { registered, error, reset } = await searchParams;
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-6">
@@ -14,6 +14,12 @@ export default async function LoginPage({
         <p className="rounded bg-green-50 px-3 py-2 text-sm text-green-700">
           Cuenta creada. Revisa tu email para confirmar tu cuenta antes de
           iniciar sesión.
+        </p>
+      )}
+      {reset === "sent" && (
+        <p className="rounded bg-green-50 px-3 py-2 text-sm text-green-700">
+          Si ese email tiene una cuenta, te hemos enviado un enlace para
+          restablecer la contraseña.
         </p>
       )}
       {error === "confirmation_failed" && (

@@ -40,6 +40,11 @@ export default function LoginForm() {
         {pending ? "Entrando..." : "Iniciar sesión"}
       </button>
       <p className="text-sm text-gray-500">
+        <Link href="/forgot-password" className="underline">
+          ¿Olvidaste tu contraseña?
+        </Link>
+      </p>
+      <p className="text-sm text-gray-500">
         ¿No tienes cuenta?{" "}
         <Link href="/register" className="underline">
           Regístrate
