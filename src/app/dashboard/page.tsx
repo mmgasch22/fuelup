@@ -161,6 +161,12 @@ export default async function DashboardPage({
             <h1 className="text-2xl font-semibold text-foreground">
               {profile.name ?? user.email}
             </h1>
+            <Link
+              href="/profile/edit"
+              className="mt-0.5 inline-block text-xs font-medium text-primary"
+            >
+              Editar perfil
+            </Link>
           </div>
           <form action={signOut}>
             <Button variant="secondary" className="text-sm">
