@@ -204,6 +204,29 @@ export default async function DashboardPage({
           )}
         </div>
 
+        {/* Saltar directamente a una fecha, sin tener que ir día a día con
+            ‹ › — formulario GET normal, sin JavaScript de cliente. */}
+        <form
+          action="/dashboard"
+          method="get"
+          className="flex items-center justify-center gap-2"
+        >
+          <input
+            type="date"
+            name="date"
+            defaultValue={date}
+            max={today}
+            aria-label="Ir a una fecha concreta"
+            className="rounded-button border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
+          />
+          <button
+            type="submit"
+            className="text-xs font-semibold text-primary"
+          >
+            Ir a esa fecha
+          </button>
+        </form>
+
         {latestTarget ? (
           <>
             <Card>
