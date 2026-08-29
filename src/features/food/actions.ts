@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRequestedDate } from "@/lib/date/dates";
+import { dashboardUrl } from "@/lib/navigation/dashboardUrl";
 
 export type FoodActionState = { error: string } | undefined;
 
@@ -152,13 +153,15 @@ export async function logFood(
 
   // Vuelve al día que se estaba viendo, no siempre a "hoy" — si no, editar
   // un día pasado te devolvería a hoy y perderías dónde estabas.
-  redirect(`/dashboard?date=${date}`);
+  redirect(dashboardUrl(date));
 }
 
 // Sin useActionState (a diferencia de logFood): es un ajuste rápido inline
 // en el dashboard, mismo patrón de <form action={...}> directo que
 // signOut/deleteFoodLog. La validación de "gramos > 0" la hace el propio
-// input (min/required) y el check constraint de Postgres como respaldo.
+// input (min/required) y el check constraint de Postgres como respaldo —
+// el error que sí puede pasar (fallo real de Supabase) ya no se traga en
+// silencio, se muestra como banner en el dashboard.
 export async function updateFoodLogGrams(formData: FormData) {
   const supabase = await createClient();
 
@@ -175,10 +178,13 @@ export async function updateFoodLogGrams(formData: FormData) {
   const date = resolveRequestedDate(formData.get("date") as string | null);
 
   if (id && grams && grams > 0) {
-    await supabase.from("food_logs").update({ grams }).eq("id", id);
+    const { error } = await supabase.from("food_logs").update({ grams }).eq("id", id);
+    if (error) {
+      redirect(dashboardUrl(date, "No se pudo actualizar la cantidad. Inténtalo de nuevo."));
+    }
   }
 
-  redirect(`/dashboard?date=${date}`);
+  redirect(dashboardUrl(date));
 }
 
 export async function deleteFoodLog(formData: FormData) {
@@ -196,10 +202,13 @@ export async function deleteFoodLog(formData: FormData) {
   const date = resolveRequestedDate(formData.get("date") as string | null);
 
   if (id) {
-    await supabase.from("food_logs").delete().eq("id", id);
+    const { error } = await supabase.from("food_logs").delete().eq("id", id);
+    if (error) {
+      redirect(dashboardUrl(date, "No se pudo borrar el alimento. Inténtalo de nuevo."));
+    }
   }
 
-  redirect(`/dashboard?date=${date}`);
+  redirect(dashboardUrl(date));
 }
 
 // Se llama directamente desde el arrastre en MealSlotsSection (no desde un

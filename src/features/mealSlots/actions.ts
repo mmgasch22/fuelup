@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { dashboardUrl } from "@/lib/navigation/dashboardUrl";
+import { todayIso } from "@/lib/date/dates";
 
 // A diferencia de logFood/updateFoodLogGrams/deleteFoodLog (que redirigen a
 // /dashboard), estas se llaman desde un componente interactivo
@@ -22,6 +24,7 @@ export async function createMealSlot(formData: FormData) {
   }
 
   const name = (formData.get("name") as string)?.trim();
+  const date = (formData.get("date") as string) || todayIso();
   if (!name) {
     return;
   }
@@ -36,11 +39,15 @@ export async function createMealSlot(formData: FormData) {
 
   const nextOrder = existing ? existing.sort_order + 1 : 0;
 
-  await supabase.from("meal_slots").insert({
+  const { error } = await supabase.from("meal_slots").insert({
     user_id: user.id,
     name,
     sort_order: nextOrder,
   });
+
+  if (error) {
+    redirect(dashboardUrl(date, "No se pudo crear la comida. Inténtalo de nuevo."));
+  }
 
   revalidatePath("/dashboard");
 }
@@ -58,13 +65,18 @@ export async function renameMealSlot(formData: FormData) {
 
   const id = formData.get("id") as string;
   const name = (formData.get("name") as string)?.trim();
+  const date = (formData.get("date") as string) || todayIso();
 
   if (id && name) {
-    await supabase
+    const { error } = await supabase
       .from("meal_slots")
       .update({ name })
       .eq("id", id)
       .eq("user_id", user.id);
+
+    if (error) {
+      redirect(dashboardUrl(date, "No se pudo renombrar la comida. Inténtalo de nuevo."));
+    }
   }
 
   revalidatePath("/dashboard");
@@ -82,10 +94,20 @@ export async function deleteMealSlot(formData: FormData) {
   }
 
   const id = formData.get("id") as string;
+  const date = (formData.get("date") as string) || todayIso();
+
   if (id) {
     // El food_logs.meal_slot_id de las entradas ya registradas en esta
     // comida pasa a NULL (ON DELETE SET NULL) — nunca se pierde historial.
-    await supabase.from("meal_slots").delete().eq("id", id).eq("user_id", user.id);
+    const { error } = await supabase
+      .from("meal_slots")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", user.id);
+
+    if (error) {
+      redirect(dashboardUrl(date, "No se pudo eliminar la comida. Inténtalo de nuevo."));
+    }
   }
 
   revalidatePath("/dashboard");

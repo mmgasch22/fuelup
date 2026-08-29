@@ -240,6 +240,7 @@ export default function MealSlotsSection({
                 onSubmit={() => setEditingId(null)}
               >
                 <input type="hidden" name="id" value={slot.id} />
+                <input type="hidden" name="date" value={date} />
                 <input
                   name="name"
                   defaultValue={slot.name}
@@ -279,6 +280,7 @@ export default function MealSlotsSection({
                   }}
                 >
                   <input type="hidden" name="id" value={slot.id} />
+                  <input type="hidden" name="date" value={date} />
                   <button type="submit" className="text-xs text-text-dim">
                     Eliminar
                   </button>
@@ -339,6 +341,7 @@ export default function MealSlotsSection({
         onSubmit={() => createFormRef.current?.reset()}
         className="flex items-center gap-2"
       >
+        <input type="hidden" name="date" value={date} />
         <input
           name="name"
           placeholder="Nueva comida..."

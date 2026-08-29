@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRequestedDate } from "@/lib/date/dates";
+import { dashboardUrl } from "@/lib/navigation/dashboardUrl";
 
 // Sin useActionState — mismo patrón directo que updateFoodLogGrams/
 // deleteFoodLog/createMealSlot: un solo campo numérico ya validado por el
@@ -38,19 +39,21 @@ export async function logWeight(formData: FormData) {
       .eq("date", date)
       .maybeSingle();
 
-    if (existing) {
-      await supabase
-        .from("weight_logs")
-        .update({ weight_kg: weightKg })
-        .eq("id", existing.id);
-    } else {
-      await supabase.from("weight_logs").insert({
-        user_id: user.id,
-        date,
-        weight_kg: weightKg,
-      });
+    const { error } = existing
+      ? await supabase
+          .from("weight_logs")
+          .update({ weight_kg: weightKg })
+          .eq("id", existing.id)
+      : await supabase.from("weight_logs").insert({
+          user_id: user.id,
+          date,
+          weight_kg: weightKg,
+        });
+
+    if (error) {
+      redirect(dashboardUrl(date, "No se pudo registrar el peso. Inténtalo de nuevo."));
     }
   }
 
-  redirect(`/dashboard?date=${date}`);
+  redirect(dashboardUrl(date));
 }

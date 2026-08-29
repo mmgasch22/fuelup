@@ -37,7 +37,7 @@ const WEIGHT_CHART_DAYS = 30;
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; error?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -62,7 +62,7 @@ export default async function DashboardPage({
   // Nunca se confía en la fecha de la URL tal cual: resolveRequestedDate
   // cae a hoy si falta, tiene formato inválido, o pide un día futuro (no
   // hay navegación a futuro en V1).
-  const { date: requestedDate } = await searchParams;
+  const { date: requestedDate, error: errorMessage } = await searchParams;
   const date = resolveRequestedDate(requestedDate);
   const isToday = date === today;
   const dateLabel = new Date(`${date}T00:00:00`).toLocaleDateString("es-ES", {
@@ -168,6 +168,12 @@ export default async function DashboardPage({
             </Button>
           </form>
         </header>
+
+        {errorMessage && (
+          <div className="rounded-card border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {errorMessage}
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-2 rounded-card border border-border bg-surface px-2 py-2">
           <Link
