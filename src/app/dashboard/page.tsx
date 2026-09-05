@@ -3,14 +3,18 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/features/auth/actions";
 import { logWeight } from "@/features/weight/actions";
+import { logSteps } from "@/features/steps/actions";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { StatTile } from "@/components/ui/StatTile";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { WeightChart } from "@/components/ui/WeightChart";
+import { AdherenceChart } from "@/components/ui/AdherenceChart";
 import { macroColors } from "@/components/ui/tokens";
 import { calculateDailyTotals } from "@/lib/food/dailyTotals";
+import { sumKcalByDate, type DateFoodLogEntry } from "@/lib/food/dailyKcalSeries";
 import { buildWeightChartData } from "@/lib/weight/chartPoints";
+import { buildAdherenceSeries } from "@/lib/adherence/chartData";
 import { addDays, resolveRequestedDate, todayIso } from "@/lib/date/dates";
 import MealSlotsSection, {
   type FoodLogRow,
@@ -33,6 +37,18 @@ interface FoodLogQueryRow {
 }
 
 const WEIGHT_CHART_DAYS = 30;
+const ADHERENCE_CHART_DAYS = 30;
+
+interface AdherenceFoodLogQueryRow {
+  date: string;
+  grams: number;
+  foods: {
+    kcal_100g: number;
+    protein_100g: number | null;
+    carbs_100g: number | null;
+    fat_100g: number | null;
+  };
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -50,7 +66,7 @@ export default async function DashboardPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("name")
+    .select("name, daily_steps_goal")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -74,9 +90,12 @@ export default async function DashboardPage({
   const [
     { data: latestTarget },
     { data: weightOnDate },
+    { data: stepsOnDate },
     { data: mealSlots },
     { data: dayLogsRaw },
     { data: weightHistoryRaw },
+    { data: adherenceFoodLogsRaw },
+    { data: targetHistoryRaw },
   ] = await Promise.all([
     supabase
       .from("calorie_targets")
@@ -94,6 +113,15 @@ export default async function DashboardPage({
       .order("date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(1)
+      .maybeSingle(),
+    // A diferencia de weight_logs (histórico, "vigente en la fecha"),
+    // steps_logs es una fila por fecha exacta — sin arrastrar el valor de
+    // un día anterior si no hay registro ese día concreto.
+    supabase
+      .from("steps_logs")
+      .select("value")
+      .eq("user_id", user.id)
+      .eq("date", date)
       .maybeSingle(),
     supabase
       .from("meal_slots")
@@ -116,6 +144,20 @@ export default async function DashboardPage({
       .gte("date", addDays(today, -(WEIGHT_CHART_DAYS - 1)))
       .order("date", { ascending: true })
       .order("created_at", { ascending: true }),
+    // Igual que la gráfica de peso: independiente del día que se esté
+    // viendo, siempre son los últimos 30 días desde hoy.
+    supabase
+      .from("food_logs")
+      .select("date, grams, foods(kcal_100g, protein_100g, carbs_100g, fat_100g)")
+      .eq("user_id", user.id)
+      .gte("date", addDays(today, -(ADHERENCE_CHART_DAYS - 1))),
+    // Historial completo de objetivos, no solo el vigente hoy — cada día
+    // del rango necesita el objetivo que tocaba ese día concreto. Es una
+    // app personal: pocas filas, no hace falta acotar por fecha.
+    supabase
+      .from("calorie_targets")
+      .select("effective_date, kcal_target")
+      .eq("user_id", user.id),
   ]);
 
   const dayLogs = (dayLogsRaw ?? []) as unknown as FoodLogQueryRow[];
@@ -146,11 +188,32 @@ export default async function DashboardPage({
     (weightHistoryRaw ?? []).map((w) => ({ date: w.date, weightKg: w.weight_kg })),
   );
 
+  const adherenceFoodLogs = (adherenceFoodLogsRaw ?? []) as unknown as AdherenceFoodLogQueryRow[];
+  const dailyKcal = sumKcalByDate(
+    adherenceFoodLogs.map((log): DateFoodLogEntry => ({
+      date: log.date,
+      grams: log.grams,
+      food: log.foods,
+    })),
+  );
+  const targetHistory = (targetHistoryRaw ?? []).map((t) => ({
+    effectiveDate: t.effective_date,
+    kcalTarget: t.kcal_target,
+  }));
+  const adherenceDates = Array.from({ length: ADHERENCE_CHART_DAYS }, (_, i) =>
+    addDays(today, -(ADHERENCE_CHART_DAYS - 1 - i)),
+  );
+  const adherenceSeries = buildAdherenceSeries(adherenceDates, dailyKcal, targetHistory);
+
   // Solo precarga el campo si el peso mostrado es literalmente el de este
   // día (no uno heredado de una fecha anterior) — si no, el formulario
   // debe verse como "registrar", no como "editar" un valor de otro día.
   const weightForSelectedDate =
     weightOnDate?.date === date ? weightOnDate.weight_kg : undefined;
+
+  // steps_logs ya se consultó por fecha exacta — a diferencia del peso, si
+  // no hay fila ese día no hay nada que "precargar" de un día anterior.
+  const stepsForSelectedDate = stepsOnDate ? stepsOnDate.value : undefined;
 
   return (
     <main className="min-h-screen bg-background px-4 py-6 sm:px-6 sm:py-10">
@@ -361,6 +424,58 @@ export default async function DashboardPage({
                 <WeightChart data={weightChartData} />
               </div>
             )}
+          </div>
+        </Card>
+
+        <Card>
+          <p className="text-xs font-medium uppercase tracking-wide text-text-dim">
+            Pasos
+          </p>
+          {profile.daily_steps_goal ? (
+            <>
+              <p className="mt-2 font-mono text-3xl font-semibold tabular-nums text-foreground">
+                {stepsOnDate?.value ?? 0}
+                <span className="ml-1 text-base font-medium opacity-70">
+                  / {profile.daily_steps_goal}
+                </span>
+              </p>
+              <div className="mt-2">
+                <ProgressBar
+                  value={progressPct(stepsOnDate?.value ?? 0, profile.daily_steps_goal)}
+                  color={macroColors.kcal}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-text-dim">
+              Todavía no hay un objetivo de pasos definido.
+            </p>
+          )}
+
+          <form action={logSteps} className="mt-3 flex items-center gap-2">
+            <input type="hidden" name="date" value={date} />
+            <input
+              type="number"
+              name="value"
+              step="1"
+              min="0"
+              required
+              defaultValue={stepsForSelectedDate}
+              placeholder={stepsForSelectedDate === undefined ? "Pasos del día" : undefined}
+              className="w-full rounded-button border border-border bg-surface px-3 py-2 text-sm text-foreground"
+            />
+            <Button type="submit" variant="secondary" className="shrink-0 text-sm">
+              {stepsForSelectedDate === undefined ? "Registrar" : "Actualizar"}
+            </Button>
+          </form>
+        </Card>
+
+        <Card>
+          <p className="text-xs font-medium uppercase tracking-wide text-text-dim">
+            Adherencia — últimos {ADHERENCE_CHART_DAYS} días
+          </p>
+          <div className="mt-2">
+            <AdherenceChart days={adherenceSeries} />
           </div>
         </Card>
       </div>
