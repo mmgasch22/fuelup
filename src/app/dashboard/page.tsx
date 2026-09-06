@@ -8,13 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { StatTile } from "@/components/ui/StatTile";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { WeightChart } from "@/components/ui/WeightChart";
-import { AdherenceChart } from "@/components/ui/AdherenceChart";
 import { macroColors } from "@/components/ui/tokens";
 import { calculateDailyTotals } from "@/lib/food/dailyTotals";
-import { sumKcalByDate, type DateFoodLogEntry } from "@/lib/food/dailyKcalSeries";
-import { buildWeightChartData } from "@/lib/weight/chartPoints";
-import { buildAdherenceSeries } from "@/lib/adherence/chartData";
 import { addDays, resolveRequestedDate, todayIso } from "@/lib/date/dates";
 import MealSlotsSection, {
   type FoodLogRow,
@@ -30,20 +25,6 @@ interface FoodLogQueryRow {
   grams: number;
   meal_slot_id: string | null;
   foods: FoodLogRow["foods"] & {
-    protein_100g: number | null;
-    carbs_100g: number | null;
-    fat_100g: number | null;
-  };
-}
-
-const WEIGHT_CHART_DAYS = 30;
-const ADHERENCE_CHART_DAYS = 30;
-
-interface AdherenceFoodLogQueryRow {
-  date: string;
-  grams: number;
-  foods: {
-    kcal_100g: number;
     protein_100g: number | null;
     carbs_100g: number | null;
     fat_100g: number | null;
@@ -93,9 +74,6 @@ export default async function DashboardPage({
     { data: stepsOnDate },
     { data: mealSlots },
     { data: dayLogsRaw },
-    { data: weightHistoryRaw },
-    { data: adherenceFoodLogsRaw },
-    { data: targetHistoryRaw },
   ] = await Promise.all([
     supabase
       .from("calorie_targets")
@@ -135,29 +113,6 @@ export default async function DashboardPage({
       )
       .eq("user_id", user.id)
       .eq("date", date),
-    // La gráfica es independiente del día que se está viendo — siempre
-    // son los últimos 30 días contados desde hoy, no desde `date`.
-    supabase
-      .from("weight_logs")
-      .select("weight_kg, date, created_at")
-      .eq("user_id", user.id)
-      .gte("date", addDays(today, -(WEIGHT_CHART_DAYS - 1)))
-      .order("date", { ascending: true })
-      .order("created_at", { ascending: true }),
-    // Igual que la gráfica de peso: independiente del día que se esté
-    // viendo, siempre son los últimos 30 días desde hoy.
-    supabase
-      .from("food_logs")
-      .select("date, grams, foods(kcal_100g, protein_100g, carbs_100g, fat_100g)")
-      .eq("user_id", user.id)
-      .gte("date", addDays(today, -(ADHERENCE_CHART_DAYS - 1))),
-    // Historial completo de objetivos, no solo el vigente hoy — cada día
-    // del rango necesita el objetivo que tocaba ese día concreto. Es una
-    // app personal: pocas filas, no hace falta acotar por fecha.
-    supabase
-      .from("calorie_targets")
-      .select("effective_date, kcal_target")
-      .eq("user_id", user.id),
   ]);
 
   const dayLogs = (dayLogsRaw ?? []) as unknown as FoodLogQueryRow[];
@@ -184,27 +139,6 @@ export default async function DashboardPage({
     .filter((log) => log.meal_slot_id === null)
     .map((log) => ({ id: log.id, grams: log.grams, foods: log.foods }));
 
-  const weightChartData = buildWeightChartData(
-    (weightHistoryRaw ?? []).map((w) => ({ date: w.date, weightKg: w.weight_kg })),
-  );
-
-  const adherenceFoodLogs = (adherenceFoodLogsRaw ?? []) as unknown as AdherenceFoodLogQueryRow[];
-  const dailyKcal = sumKcalByDate(
-    adherenceFoodLogs.map((log): DateFoodLogEntry => ({
-      date: log.date,
-      grams: log.grams,
-      food: log.foods,
-    })),
-  );
-  const targetHistory = (targetHistoryRaw ?? []).map((t) => ({
-    effectiveDate: t.effective_date,
-    kcalTarget: t.kcal_target,
-  }));
-  const adherenceDates = Array.from({ length: ADHERENCE_CHART_DAYS }, (_, i) =>
-    addDays(today, -(ADHERENCE_CHART_DAYS - 1 - i)),
-  );
-  const adherenceSeries = buildAdherenceSeries(adherenceDates, dailyKcal, targetHistory);
-
   // Solo precarga el campo si el peso mostrado es literalmente el de este
   // día (no uno heredado de una fecha anterior) — si no, el formulario
   // debe verse como "registrar", no como "editar" un valor de otro día.
@@ -224,12 +158,26 @@ export default async function DashboardPage({
             <h1 className="text-2xl font-semibold text-foreground">
               {profile.name ?? user.email}
             </h1>
-            <Link
-              href="/profile/edit"
-              className="mt-0.5 inline-block text-xs font-medium text-primary"
-            >
-              Editar perfil
-            </Link>
+            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+              <Link
+                href="/profile/edit"
+                className="text-xs font-medium text-primary"
+              >
+                Editar perfil
+              </Link>
+              <Link
+                href="/target/edit"
+                className="text-xs font-medium text-primary"
+              >
+                Editar objetivo
+              </Link>
+              <Link
+                href="/stats"
+                className="text-xs font-medium text-primary"
+              >
+                Ver estadísticas
+              </Link>
+            </div>
           </div>
           <form action={signOut}>
             <Button variant="secondary" className="text-sm">
@@ -410,21 +358,6 @@ export default async function DashboardPage({
               {weightForSelectedDate === undefined ? "Registrar" : "Actualizar"}
             </Button>
           </form>
-
-          <div className="mt-4 border-t border-border pt-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-text-dim">
-              Últimos {WEIGHT_CHART_DAYS} días
-            </p>
-            {weightChartData.points.length === 0 ? (
-              <p className="mt-2 text-xs text-text-dim">
-                Registra tu peso para ver su evolución.
-              </p>
-            ) : (
-              <div className="mt-2">
-                <WeightChart data={weightChartData} />
-              </div>
-            )}
-          </div>
         </Card>
 
         <Card>
@@ -468,15 +401,6 @@ export default async function DashboardPage({
               {stepsForSelectedDate === undefined ? "Registrar" : "Actualizar"}
             </Button>
           </form>
-        </Card>
-
-        <Card>
-          <p className="text-xs font-medium uppercase tracking-wide text-text-dim">
-            Adherencia — últimos {ADHERENCE_CHART_DAYS} días
-          </p>
-          <div className="mt-2">
-            <AdherenceChart days={adherenceSeries} />
-          </div>
         </Card>
       </div>
     </main>
